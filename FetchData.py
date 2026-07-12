@@ -7,10 +7,20 @@ def getdata(ticker):
     DataFrame=yf.download(ticker, period="2y", interval="1d")
     DataFrame["SMA_20"]=DataFrame["Close"].rolling(window=20).mean()
     DataFrame["SMA_50"]=DataFrame["Close"].rolling(window=50).mean()
-    if DataFrame["SMA_20"].iloc[-1] > DataFrame["SMA_50"].iloc[-1]:
+    difference=DataFrame["Close"].diff()
+    gain=difference.where(difference>0,0)
+    loss=-difference.where(difference<0,0)
+    avg_gain=gain.rolling(window=14).mean()
+    avg_loss=loss.rolling(window=14).mean()
+    relative_strength=avg_gain/avg_loss
+    DataFrame["RSI"]=100-(100/(1+relative_strength))
+    latest_rsi=DataFrame["RSI"].iloc[-1]
+    if DataFrame["SMA_20"].iloc[-1] > DataFrame["SMA_50"].iloc[-1] and latest_rsi<70:
         signal="BUY"
-    else:
+    elif DataFrame["SMA_20"].iloc[-1] > DataFrame["SMA_50"].iloc[-1] and latest_rsi>30:
         signal="SELL"
+    else:
+        signal="HOLD"
     print(DataFrame.head())
     plt.figure(figsize=(10,5))
     plt.plot(DataFrame.index, DataFrame['Close'], label='Close Price')
@@ -20,12 +30,17 @@ def getdata(ticker):
     plt.title(f'{ticker} Closing Price Over 2 Years(Previous)')
     plt.xlabel("Date")
     plt.ylabel('Price')
+    print(f"RSI:{latest_rsi:.2f}")
     plt.show()
-    return signal
-signal = getdata(ticker)
-print(f"\n You have {shares} in {ticker} and you bought them at {buy_price} each.")
+    return signal,DataFrame
+signal,DataFrame= getdata(ticker)
+current_price=float(DataFrame["Close"].iloc[-1].item())
+profit_loss_percentage=((current_price-buy_price)/buy_price)*100
+print(f"\nYou have {shares} shares in {ticker}, bought at ${buy_price} each.")
+print(f"Current price: {current_price:.2f}")
+print(f"Profit/Loss: {profit_loss_percentage:.2f}%")
 print(f"Current Signal for {ticker} is: {signal}")
-if signal=="BUY":
-    print(f"Hold or risk Buying.")
+if signal == "BUY":
+    print("Hold or consider buying more.")
 else:
-    print(f"Consider your position...According to signal, its quite unpredictable.")
+    print("Consider your position — signal suggests weakness.")
