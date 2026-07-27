@@ -22,6 +22,7 @@ def get_ticker(company_name):
    return matches[0]["symbol"]
 def getdata(ticker):
     DataFrame=yf.download(ticker, period="2y", interval="1d")
+    DataFrame.columns = DataFrame.columns.get_level_values(0)
     DataFrame["SMA_20"]=DataFrame["Close"].rolling(window=20).mean()
     DataFrame["SMA_50"]=DataFrame["Close"].rolling(window=50).mean()
     difference=DataFrame["Close"].diff()
@@ -68,9 +69,26 @@ def backtest(DataFrame,initial_investment=10000):
         total_value=cash+(shares_held*row_price)
         portfolio_history.append(total_value)
     return portfolio_history
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+def prepare_ml_data(DataFrame):
+    ml_data=DataFrame.copy()
+    ml_data["Tommorw Close"]=ml_data["Close"].shift(-1)
+    ml_data["Target"]=(ml_data["Tommorw Close"]>ml_data["Close"]).astype(int)
+    ml_data=ml_data.dropna()
+    return ml_data
+def train_ml_model(ml_data):
+    features=ml_data[["SMA_20","SMA_50","RSI"]]
+    labels=ml_data["Target"]
+    x_train, x_test, y_train, y_test=train_test_split(features,labels,test_size=0.2,shuffle=False)
+    model=RandomForestClassifier(n_estimators=100,random_state=42)
+    model.fit(x_train, y_train)
+    predictions=model.predict(x_test)
+    accuracy=accuracy_score(y_test, predictions)
+    return model,accuracy
 company_name=input("Enter the name of the company in which you have stocks:")
 ticker=get_ticker(company_name)
-currency_symbol="₹" if(".NS"in ticker or".BO"in ticker) else "$"
 if ticker is None:
     print("Company not found. Please check the name and try again.")
     exit()
@@ -79,6 +97,14 @@ print(f"Found ticker: {ticker}")
 shares=int(input("What is the quantity of the shares you possess?"))
 buy_price=float(input("What was the price at which you bought the shares?"))
 signal,DataFrame= getdata(ticker)
+ml_data=prepare_ml_data(DataFrame)
+ml_model,ml_accuracy=train_ml_model(ml_data)
+latest_features=DataFrame[["SMA_20","SMA_50","RSI"]].dropna().iloc[[-1]]
+ml_prediction=ml_model.predict(latest_features)[0]
+ml_signal="UP" if ml_prediction==1 else "DOWN"
+print(f"\n----ML Model Results----")
+print(f"Model accuracy on test data: {ml_accuracy*100:.2f}%")
+print(f"ML model predicts tomorrow's price will go: {ml_signal}")
 portfolio_history=backtest(DataFrame)
 strategy_final_value=portfolio_history[-1]
 strategy_return_percent=((strategy_final_value-10000)/10000)*100
